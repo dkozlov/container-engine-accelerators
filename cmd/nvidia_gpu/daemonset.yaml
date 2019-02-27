@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: shared-gpu-gcp-k8s-device-plugin
+  namespace: kube-system
+  labels:
+    k8s-app: shared-gpu-gcp-k8s-device-plugin
+spec:
+  selector:
+    matchLabels:
+      k8s-app: shared-gpu-gcp-k8s-device-plugin
+  template:
+    metadata:
+      labels:
+        k8s-app: shared-gpu-gcp-k8s-device-plugin
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+    spec:
+      priorityClassName: system-node-critical
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: cloud.google.com/gke-accelerator
+                operator: Exists
+              - key: example.com/gpu-utilization
+                operator: Exists
+      tolerations:
+      - operator: "Exists"
+        effect: "NoExecute"
+      - operator: "Exists"
+        effect: "NoSchedule"
+      volumes:
+      - name: device-plugin
+        hostPath:
+          path: /var/lib/kubelet/device-plugins
+      - name: dev
+        hostPath:
+          path: /dev
+      containers:
+      - image: "dfkozlov/shared-gpu-gcp-k8s-device-plugin:latest"
+        command: ["/usr/bin/shared-gpu-gcp-k8s-device-plugin", "-logtostderr"]
+        name: shared-gpu-gcp-k8s-device-plugin
+        imagePullPolicy: Always
+        env:
+          - name: DP_EXTENDED_RESOURCE_NAME
+            value: 'example.com/gpu-utilization'
+          - name: DP_EXTENDED_RESOURCE_VALUE_PER_DEVICE
+            value: '100'
+        resources:
+          requests:
+            cpu: 50m
+            memory: 50Mi
+          limits:
+            cpu: 50m
+            memory: 50Mi
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: device-plugin
+          mountPath: /device-plugin
+        - name: dev
+          mountPath: /dev
+  updateStrategy:
+    type: RollingUpdate

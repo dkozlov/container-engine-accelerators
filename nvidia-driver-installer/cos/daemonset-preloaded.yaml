@@ -48,6 +48,9 @@ spec:
                 operator: Exists
       tolerations:
       - operator: "Exists"
+      - key: "example.com/gpu-utilization"
+        effect: "NoSchedule"
+        operator: "Exists"
       hostNetwork: true
       hostPID: true
       volumes:
