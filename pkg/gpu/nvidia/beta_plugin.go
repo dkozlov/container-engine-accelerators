@@ -17,6 +17,7 @@ package nvidia
 import (
 	"fmt"
 	"net"
+	"path"
 	"time"
 
 	"github.com/golang/glog"
@@ -68,10 +69,9 @@ func (s *pluginServiceV1Beta1) Allocate(ctx context.Context, requests *pluginapi
 			if dev.Health != pluginapi.Healthy {
 				return nil, fmt.Errorf("invalid allocation request with unhealthy device %s", id)
 			}
-			deviceFilename := s.ngm.GetDeviceFilename(id)
 			resp.Devices = append(resp.Devices, &pluginapi.DeviceSpec{
-				HostPath:      "/dev/" + deviceFilename,
-				ContainerPath: "/dev/" + deviceFilename,
+				HostPath:      path.Join(s.ngm.devDirectory, id),
+				ContainerPath: path.Join(s.ngm.devDirectory, id),
 				Permissions:   "mrw",
 			})
 		}
@@ -89,11 +89,6 @@ func (s *pluginServiceV1Beta1) Allocate(ctx context.Context, requests *pluginapi
 			HostPath:      s.ngm.hostPathPrefix,
 			ReadOnly:      true,
 		})
-		// Add LD_LIBRARY_PATH env to work around the compatibility issue
-		// in cuda10 docker ubuntu base images.
-		resp.Envs = make(map[string]string)
-		resp.Envs["LD_LIBRARY_PATH"] = "/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
-
 		resps.ContainerResponses = append(resps.ContainerResponses, resp)
 	}
 	return resps, nil
