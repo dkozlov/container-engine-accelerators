@@ -66,7 +66,7 @@ func NewNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirector
 	return NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix, devDirectory string, 1)
 }
 
-func NewNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirectory string, duplicationFactor uint) *nvidiaGPUManager {
+func NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirectory string, duplicationFactor uint) *nvidiaGPUManager {
 	return &nvidiaGPUManager{
 		hostPathPrefix:      hostPathPrefix,
 		containerPathPrefix: containerPathPrefix,
