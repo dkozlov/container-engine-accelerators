@@ -63,7 +63,7 @@ type nvidiaGPUManager struct {
 }
 
 func NewNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirectory string) *nvidiaGPUManager {
-	return NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix, devDirectory string, 1)
+	return NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix, devDirectory, 1)
 }
 
 func NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirectory string, duplicationFactor uint) *nvidiaGPUManager {
