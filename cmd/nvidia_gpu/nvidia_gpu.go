@@ -63,7 +63,7 @@ var (
 func main() {
 	flag.Parse()
 	glog.Infoln("device-plugin started")
-	ngm := gpumanager.NewNvidiaGPUManager(*hostPathPrefix, *containerPathPrefix, devDirectory, *gpuDuplicationFactor)
+	ngm := gpumanager.NewSharedNvidiaGPUManager(*hostPathPrefix, *containerPathPrefix, devDirectory, *gpuDuplicationFactor)
 	// Keep on trying until success. This is required
 	// because Nvidia drivers may not be installed initially.
 	for {
