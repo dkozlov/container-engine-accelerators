@@ -28,8 +28,10 @@ import (
 
 const (
 	// Device plugin settings.
-	kubeletEndpoint         = "kubelet.sock"
-        envExtendedResourceName = "DP_EXTENDED_RESOURCE_NAME"
+	kubeletEndpoint                   = "kubelet.sock"
+	pluginEndpointPrefix              = "nvidiaGPU"
+	devDirectory                      = "/dev"
+        envExtendedResourceName           = "DP_EXTENDED_RESOURCE_NAME"
         envExtendedResourceValuePerDevice = "DP_EXTENDED_RESOURCE_VALUE_PER_DEVICE"
 )
 
@@ -60,8 +62,8 @@ var (
 
 func main() {
 	flag.Parse()
-	glog.Infoln("device-plugin started with GPU duplication factor of", *gpuDuplicationFactor)
-	ngm := gpumanager.NewSharedNvidiaGPUManager(*hostPathPrefix, *containerPathPrefix, *gpuDuplicationFactor)
+	glog.Infoln("device-plugin started")
+	ngm := gpumanager.NewNvidiaGPUManager(*hostPathPrefix, *containerPathPrefix, devDirectory, *gpuDuplicationFactor)
 	// Keep on trying until success. This is required
 	// because Nvidia drivers may not be installed initially.
 	for {

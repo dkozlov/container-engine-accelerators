@@ -34,12 +34,13 @@ import (
 const (
 	// All NVIDIA GPUs cards should be mounted with nvidiactl and nvidia-uvm
 	// If the driver installed correctly, these two devices will be there.
-	nvidiaCtlDevice = "/dev/nvidiactl"
-	nvidiaUVMDevice = "/dev/nvidia-uvm"
+	nvidiaCtlDevice = "nvidiactl"
+	nvidiaUVMDevice = "nvidia-uvm"
 	// Optional device.
-	nvidiaUVMToolsDevice = "/dev/nvidia-uvm-tools"
-	devDirectory         = "/dev"
-	nvidiaDeviceRE       = `^nvidia[0-9]*$`
+	nvidiaUVMToolsDevice      = "nvidia-uvm-tools"
+	nvidiaDeviceRE            = `^nvidia[0-9]*$`
+	gpuCheckInterval          = 10 * time.Second
+	pluginSocketCheckInterval = 1 * time.Second
         envExtendedResourceName = "DP_EXTENDED_RESOURCE_NAME"
 )
 
@@ -51,22 +52,25 @@ var (
 type nvidiaGPUManager struct {
 	hostPathPrefix      string
 	containerPathPrefix string
-	duplicationFactor   uint
+	devDirectory        string
+        duplicationFactor   uint
 	defaultDevices      []string
 	devices             map[string]pluginapi.Device
 	grpcServer          *grpc.Server
 	socket              string
 	stop                chan bool
+	devicesMutex        sync.Mutex
 }
 
-func NewNvidiaGPUManager(hostPathPrefix, containerPathPrefix string) *nvidiaGPUManager {
-	return NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix, 1)
+func NewNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirectory string) *nvidiaGPUManager {
+	return NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix, devDirectory string, 1)
 }
 
-func NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, duplicationFactor uint) *nvidiaGPUManager {
+func NewNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirectory string, duplicationFactor uint) *nvidiaGPUManager {
 	return &nvidiaGPUManager{
 		hostPathPrefix:      hostPathPrefix,
 		containerPathPrefix: containerPathPrefix,
+		devDirectory:        devDirectory,
 		duplicationFactor:   duplicationFactor,
 		devices:             make(map[string]pluginapi.Device),
 		stop:                make(chan bool),
@@ -85,10 +89,10 @@ func (ngm *nvidiaGPUManager) GetDeviceFilename(id string) string {
 	return extractRealDeviceID(id)
 }
 
-// Discovers all NVIDIA GPU devices available on the local node by walking `/dev` directory.
+// Discovers all NVIDIA GPU devices available on the local node by walking nvidiaGPUManager's devDirectory.
 func (ngm *nvidiaGPUManager) discoverGPUs() error {
 	reg := regexp.MustCompile(nvidiaDeviceRE)
-	files, err := ioutil.ReadDir(devDirectory)
+	files, err := ioutil.ReadDir(ngm.devDirectory)
 	var realDevices []string
 	if err != nil {
 		return err
@@ -107,10 +111,50 @@ func (ngm *nvidiaGPUManager) discoverGPUs() error {
 		for _, realID := range realDevices {
 			id := generateFakeDeviceID(realID, i)
 			glog.Infof("- shared Nvidia GPU %q\n", id)
-			ngm.devices[id] = pluginapi.Device{ID: id, Health: pluginapi.Healthy}
+			ngm.setDevice(id, pluginapi.Healthy)
 		}
 	}
 	return nil
+}
+
+func (ngm *nvidiaGPUManager) hasAdditionalGPUsInstalled() bool {
+	ngm.devicesMutex.Lock()
+	originalDeviceCount := len(ngm.devices)
+	ngm.devicesMutex.Unlock()
+	deviceCount, err := ngm.discoverNumGPUs()
+	if err != nil {
+		glog.Errorln(err)
+		return false
+	}
+	if deviceCount > originalDeviceCount {
+		glog.Infof("Found %v GPUs, while only %v are registered. Stopping device-plugin server.", deviceCount, originalDeviceCount)
+		return true
+	}
+	return false
+}
+
+func (ngm *nvidiaGPUManager) discoverNumGPUs() (int, error) {
+	reg := regexp.MustCompile(nvidiaDeviceRE)
+	deviceCount := 0
+	files, err := ioutil.ReadDir(ngm.devDirectory)
+	if err != nil {
+		return deviceCount, err
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		if reg.MatchString(f.Name()) {
+			deviceCount++
+		}
+	}
+	return deviceCount, nil
+}
+
+func (ngm *nvidiaGPUManager) setDevice(name string, health string) {
+	ngm.devicesMutex.Lock()
+	ngm.devices[name] = pluginapi.Device{ID: name, Health: health}
+	ngm.devicesMutex.Unlock()
 }
 
 func (ngm *nvidiaGPUManager) GetDeviceState(DeviceName string) string {
@@ -120,18 +164,21 @@ func (ngm *nvidiaGPUManager) GetDeviceState(DeviceName string) string {
 
 // Discovers Nvidia GPU devices and sets up device access environment.
 func (ngm *nvidiaGPUManager) Start() error {
-	if _, err := os.Stat(nvidiaCtlDevice); err != nil {
+	nvidiaCtlDevicePath := path.Join(ngm.devDirectory, nvidiaCtlDevice)
+	nvidiaUVMDevicePath := path.Join(ngm.devDirectory, nvidiaUVMDevice)
+	if _, err := os.Stat(nvidiaCtlDevicePath); err != nil {
 		return err
 	}
 
-	if _, err := os.Stat(nvidiaUVMDevice); err != nil {
+	if _, err := os.Stat(nvidiaUVMDevicePath); err != nil {
 		return err
 	}
 
-	ngm.defaultDevices = []string{nvidiaCtlDevice, nvidiaUVMDevice}
+	ngm.defaultDevices = []string{nvidiaCtlDevicePath, nvidiaUVMDevicePath}
 
-	if _, err := os.Stat(nvidiaUVMToolsDevice); err == nil {
-		ngm.defaultDevices = append(ngm.defaultDevices, nvidiaUVMToolsDevice)
+	nvidiaUVMToolsDevicePath := path.Join(ngm.devDirectory, nvidiaUVMToolsDevice)
+	if _, err := os.Stat(nvidiaUVMToolsDevicePath); err == nil {
+		ngm.defaultDevices = append(ngm.defaultDevices, nvidiaUVMToolsDevicePath)
 	}
 
 	if err := ngm.discoverGPUs(); err != nil {
@@ -143,6 +190,7 @@ func (ngm *nvidiaGPUManager) Start() error {
 
 func (ngm *nvidiaGPUManager) CheckDeviceStates() bool {
 	changed := false
+	ngm.devicesMutex.Lock()
 	for id, dev := range ngm.devices {
 		state := ngm.GetDeviceState(id)
 		if dev.Health != state {
@@ -151,6 +199,7 @@ func (ngm *nvidiaGPUManager) CheckDeviceStates() bool {
 			ngm.devices[id] = dev
 		}
 	}
+	ngm.devicesMutex.Unlock()
 	return changed
 }
 
@@ -215,16 +264,35 @@ func (ngm *nvidiaGPUManager) Serve(pMountPath, kEndpoint, pluginEndpoint string)
 					glog.Infoln("device-plugin registered with the kubelet")
 				}
 
-				// This is checking if the plugin socket was deleted. If so,
-				// stop the grpc server and start the whole thing again.
+				// This is checking if the plugin socket was deleted
+				// and also if there are additional GPU devices installed.
+				// If so, stop the grpc server and start the whole thing again.
+				gpuCheck := time.NewTicker(gpuCheckInterval)
+				pluginSocketCheck := time.NewTicker(pluginSocketCheckInterval)
+				defer gpuCheck.Stop()
+				defer pluginSocketCheck.Stop()
+			statusCheck:
 				for {
-					if _, err := os.Lstat(pluginEndpointPath); err != nil {
-						glog.Infof("stopping device-plugin server at: %s\n", pluginEndpointPath)
-						glog.Errorln(err)
-						ngm.grpcServer.Stop()
-						break
+					select {
+					case <-pluginSocketCheck.C:
+						if _, err := os.Lstat(pluginEndpointPath); err != nil {
+							glog.Infof("stopping device-plugin server at: %s\n", pluginEndpointPath)
+							glog.Errorln(err)
+							ngm.grpcServer.Stop()
+							break statusCheck
+						}
+					case <-gpuCheck.C:
+						if ngm.hasAdditionalGPUsInstalled() {
+							ngm.grpcServer.Stop()
+							for {
+								err := ngm.discoverGPUs()
+								if err == nil {
+									break statusCheck
+								}
+							}
+						}
+
 					}
-					time.Sleep(1 * time.Second)
 				}
 				wg.Wait()
 			}
