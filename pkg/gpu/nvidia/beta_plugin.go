@@ -69,9 +69,10 @@ func (s *pluginServiceV1Beta1) Allocate(ctx context.Context, requests *pluginapi
 			if dev.Health != pluginapi.Healthy {
 				return nil, fmt.Errorf("invalid allocation request with unhealthy device %s", id)
 			}
+			deviceFilename := s.ngm.GetDeviceFilename(id)
 			resp.Devices = append(resp.Devices, &pluginapi.DeviceSpec{
-				HostPath:      path.Join(s.ngm.devDirectory, id),
-				ContainerPath: path.Join(s.ngm.devDirectory, id),
+				HostPath:      path.Join(s.ngm.devDirectory, deviceFilename),
+				ContainerPath: path.Join(s.ngm.devDirectory, deviceFilename),
 				Permissions:   "mrw",
 			})
 		}
@@ -84,11 +85,13 @@ func (s *pluginServiceV1Beta1) Allocate(ctx context.Context, requests *pluginapi
 			})
 		}
 
-		resp.Mounts = append(resp.Mounts, &pluginapi.Mount{
-			ContainerPath: s.ngm.containerPathPrefix,
-			HostPath:      s.ngm.hostPathPrefix,
-			ReadOnly:      true,
-		})
+		for _, mountPath := range s.ngm.mountPaths {
+			resp.Mounts = append(resp.Mounts, &pluginapi.Mount{
+				HostPath:      mountPath.HostPath,
+				ContainerPath: mountPath.ContainerPath,
+				ReadOnly:      true,
+			})
+		}
 		resps.ContainerResponses = append(resps.ContainerResponses, resp)
 	}
 	return resps, nil

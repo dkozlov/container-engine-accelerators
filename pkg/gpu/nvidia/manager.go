@@ -50,9 +50,8 @@ var (
 
 // nvidiaGPUManager manages nvidia gpu devices.
 type nvidiaGPUManager struct {
-	hostPathPrefix      string
-	containerPathPrefix string
 	devDirectory        string
+	mountPaths          []MountPath
         duplicationFactor   uint
 	defaultDevices      []string
 	devices             map[string]pluginapi.Device
@@ -62,15 +61,15 @@ type nvidiaGPUManager struct {
 	devicesMutex        sync.Mutex
 }
 
-func NewNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirectory string) *nvidiaGPUManager {
-	return NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix, devDirectory, 1)
+type MountPath struct {
+	HostPath      string
+	ContainerPath string
 }
 
-func NewSharedNvidiaGPUManager(hostPathPrefix, containerPathPrefix string, devDirectory string, duplicationFactor uint) *nvidiaGPUManager {
+func NewSharedNvidiaGPUManager(devDirectory string, mountPaths []MountPath, duplicationFactor uint) *nvidiaGPUManager {
 	return &nvidiaGPUManager{
-		hostPathPrefix:      hostPathPrefix,
-		containerPathPrefix: containerPathPrefix,
 		devDirectory:        devDirectory,
+		mountPaths:          mountPaths,
 		duplicationFactor:   duplicationFactor,
 		devices:             make(map[string]pluginapi.Device),
 		stop:                make(chan bool),

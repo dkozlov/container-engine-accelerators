@@ -39,7 +39,7 @@ spec:
         hostPath:
           path: /dev
       containers:
-      - image: "dfkozlov/shared-gpu-gcp-k8s-device-plugin:4510d737b02e9226c7510adf68d8482e35ff31c6"
+      - image: "dfkozlov/shared-gpu-gcp-k8s-device-plugin:latest"
         command: ["/usr/bin/shared-gpu-gcp-k8s-device-plugin", "-logtostderr"]
         name: shared-gpu-gcp-k8s-device-plugin
         imagePullPolicy: Always
